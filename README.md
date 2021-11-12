@@ -84,7 +84,7 @@ prompt>
 If you apply this library or model to any project and research, please cite our code:
 
 ```
-@article{kakaobrain2021kogpt,
+@misc{kakaobrain2021kogpt,
   title         = {KoGPT: KakaoBrain Korean(hangul) Generative Pre-Training}
   author        = {Ildoo Kim and Gunsoo Han and Jiyeon Ham and Woonhyuk Baek},
   year          = {2021},
