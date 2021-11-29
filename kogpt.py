@@ -12,7 +12,7 @@ model = AutoModelForCausalLM.from_pretrained(
 ).to(device='cuda', non_blocking=True)
 _ = model.eval()
 
-words = '오규림'
+words = '최재혁'
 generated = None
 with torch.no_grad():
   for word in words:
@@ -24,7 +24,7 @@ with torch.no_grad():
     generated = tokenizer.batch_decode(gen_tokens)[0]
     
     print(generated)
-# words = '오규림'   
+# words = '최재혁'   
 # generated = None
 # def temp(words,generated=None):
 #   for word in words:
