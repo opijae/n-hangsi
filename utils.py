@@ -76,4 +76,4 @@ if __name__=="__main__":
 
 
 
-  print(generate_n_hangsi('오규림', tokenizer, model))
+  print(generate_n_hangsi('최재혁', tokenizer, model))
