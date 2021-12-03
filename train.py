@@ -27,7 +27,7 @@ print('load_model')
 model = GPT2LMHeadModel.from_pretrained('skt/kogpt2-base-v2').to(device)
 
 # model.load_state_dict(torch.load('/root/jchlwogur/kogpt/models/Kogpt-poem-696.pth'))
-model.load_state_dict(torch.load('/root/jchlwogur/kogpt/models/Kogpt-poem+summary-6.pth'))
+model.load_state_dict(torch.load('/root/jchlwogur/kogpt/models/Kogpt-all_max_len=64-967.pth'))
 
 ########## Dataset ############
 print('load Dataset')

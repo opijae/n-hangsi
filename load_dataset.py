@@ -1,3 +1,4 @@
+import torch
 from torch.utils.data import Dataset
 import torch.nn.functional as F
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
@@ -5,11 +6,6 @@ import json
 from tqdm import tqdm
 import os
 from glob import glob
-import kss
-from multiprocessing import Pool
-from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
-import sys, mmap
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # tokenizer = AutoTokenizer.from_pretrained(
 #   'kakaobrain/kogpt', revision='KoGPT6B-ryan1.5b-float16',  # or float32 version: revision=KoGPT6B-ryan1.5b
@@ -31,13 +27,16 @@ class CustomDataset(Dataset):
             # '/root/jchlwogur/kogpt/dataset/ChatbotData.csv',
             # '/root/jchlwogur/kogpt/dataset/fci_train_val.txt',
             # '/root/jchlwogur/kogpt/dataset/KorNLUDatasets.txt',
-            # '/root/jchlwogur/kogpt/dataset/lyricskor.txt',
+            '/root/jchlwogur/kogpt/dataset/lyricskor.txt',
             'poem',
-            'summary_multi_process'
-            # 'summary'
+            # 'summary_multi_process'
+            # 'summary',
+            # 'summary_kss',
+            'n_hangi'
             ]
         self.data = []
         self.max_len = 0
+        self._max_len = 64
         self._load_data()
         self._padding()
 
@@ -48,19 +47,19 @@ class CustomDataset(Dataset):
         return self.data[index]
 
 
-    # def _read_txt(self, path):
-    #     # path = os.path.join('dataset',path)
-    #     with open(path,'r') as f:
-    #         _data = f.read()
-    #     _data_line = _data.split('\n')
-    #     return _data_line
+    def _read_txt(self, path):
+        # path = os.path.join('dataset',path)
+        with open(path,'r') as f:
+            _data = f.read()
+        _data_line = _data.split('\n')
+        return _data_line
 
-    def _read_txt(self, s):
-        for sent in kss.split_sentences(s):
-            sent = sent[:128]
-            self.max_len = max(self.max_len, len(sent))
-            if len(sent) >= 10:
-                self.data.append(tokenizer.encode(sent , return_tensors='pt')[0]) 
+    # def (self, s):
+    #     for sent in kss.split_sentences(s):
+    #         sent = s_read_txtent[:32]
+    #         self.max_len = max(self.max_len, len(sent))
+    #         if len(sent) >= 10:
+    #             self.data.append(tokenizer.encode(sent , return_tensors='pt')[0]) 
 
     def _load_data(self):
         for path in self.dir_list:
@@ -69,7 +68,7 @@ class CustomDataset(Dataset):
                 _data_line.pop(0)
                 for item in _data_line:
                     word1, word2 = item.split('\t')[:2]
-                    word1, word2 = word1[:128], word2[:128]
+                    word1, word2 = word1[:self._max_len], word2[:self._max_len]
                     self.max_len = max(self.max_len, len(word1), len(word2))
                     if len(word1) >= 10:
                         self.data.append(tokenizer.encode(word1 , return_tensors='pt')[0])
@@ -80,7 +79,7 @@ class CustomDataset(Dataset):
                 _data_line = self._read_txt(path)
                 for item in _data_line:
                     word1 = item.split('\t')[1]
-                    word1 = word1[:128]
+                    word1 = word1[:self._max_len]
                     self.max_len = max(self.max_len, len(word1))
                     if len(word1) >= 10:
                         self.data.append(tokenizer.encode(word1 , return_tensors='pt')[0])
@@ -88,24 +87,10 @@ class CustomDataset(Dataset):
             elif 'lyrics' in path:
                 _data_line = self._read_txt(path)
                 for item in _data_line:
-                    item = item[:128]
+                    item = item[:self._max_len]
                     self.max_len = max(self.max_len, len(item))
                     if len(item) >= 10:
                         self.data.append(tokenizer.encode(item , return_tensors='pt')[0])
-
-
-            elif 'chatbot' in path:
-                chatbot = pd.read_csv(path)
-                chat_item= chatbot.values
-                chatbot_result=[]
-                for idx, item in enumerate(chat_item):
-                    word1, word2 = item[:2]
-                    word1, word2 = word1[:128], word2[:128]
-                    self.max_len = max(self.max_len, len(word1), len(word2))
-                    if len(word1) >= 10:
-                        self.data.append(tokenizer.encode(word1 , return_tensors='pt')[0])
-                    if len(word2) >= 10:
-                        self.data.append(tokenizer.encode(word2 , return_tensors='pt')[0])
 
             elif 'poem' in path:
                 print('start load poem dataset')
@@ -113,9 +98,7 @@ class CustomDataset(Dataset):
                 for text in tqdm(text_list):
                     with open(text,'r',encoding='utf-8') as f:
                         contents = f.read()
-                    # re.findall(r'body :([^(]*)\(info :\)', contents)
-                    title_flag, body_flag, info_flag = False,False,False
-                    temp = []
+                    body_flag = False
                     for line in contents.split('\n'):
                         line = line.strip()
                         if 'body' in line:
@@ -126,70 +109,64 @@ class CustomDataset(Dataset):
                         if '\xa0' in line or len(line) < 2:
                             continue
                         if body_flag:
-                            line = line[:128]
+                            line = line[:self._max_len]
                             self.max_len = max(self.max_len, len(line))
                             if len(line) >= 10:
                                 self.data.append(tokenizer.encode(line , return_tensors='pt')[0])
-
-            elif 'summary' == path:
+            elif 'summary_kss' == path:
+                bufsize = 65536
                 print('start load summary dataset')
-                json_list = glob('/root/jchlwogur/kogpt/dataset/summarize/*/*.json')
-                # text_file = open('summary_total1.txt','w',encoding='utf-8')
-                for json_file in tqdm(json_list):
-                    with open(json_file) as f:
-                        json_object = json.load(f)
-                    sent = json_object['passage']
-                    # for sent in kss.split_sentences(s):
-                    #     sent = sent[:128]
-                        # text_file.write(sent + '\n')
-                    self.max_len = max(self.max_len, len(sent))
-                    if len(sent) >= 10:
-                        self.data.append(tokenizer.encode(sent , return_tensors='pt')[0])
-                # text_file.close()
-            elif 'summary1' == path:
-                print('start load summary dataset')
-                text_list = glob('/root/jchlwogur/kogpt/dataset/summarize_seperate/*.txt')
-
-                for text_path in text_list[:0]:
-                    with open(text_path,'r',encoding='utf-8') as f:
-                        contents = f.read()
-                    s_list = contents.split('\n')
-                    for s in s_list:
-                        for sent in kss.split_sentences(s):
-                            sent = sent[:128]
-                            self.max_len = max(self.max_len, len(sent))
-                            if len(sent) >= 10:
+                text_list = glob('/root/jchlwogur/kogpt/dataset/summarize_kss/*.txt')
+                for path in tqdm(text_list):
+                    with open(path) as infile: 
+                        while True:
+                            lines = infile.readlines(bufsize)
+                            if not lines:
+                                break
+                            for sent in lines:
+                                sent = sent[:self._max_len]
+                                self.max_len = max(self.max_len, len(sent))
                                 self.data.append(tokenizer.encode(sent , return_tensors='pt')[0])
-                    # break
-            elif 'summary_multi_process' == path:
-                executor = ThreadPoolExecutor(max_workers=4)
-                print('start load summary dataset') 
-                text_list = glob('/root/jchlwogur/kogpt/dataset/summarize_seperate/*.txt')
-                for file in text_list:
-                    with open(file,'r',encoding='utf-8') as fp:
-                        for line in tqdm(fp):
-                            executor.submit(self._read_txt, line)
-                # with ThreadPoolExecutor() as executor:
-                #     result = executor.map(self._read_txt, text_list)
-
-
-    
-            # contents = f.read()
-        # s_list = contents.split('\n')
-        # for sent in s_list:
-        #     self.max_len = max(self.max_len, len(sent))
-        #     if len(sent) >= 10:
-        #         self.data.append(tokenizer.encode(sent , return_tensors='pt')[0])
-            # for sent in kss.split_sentences(s):
-            #     sent = sent[:128]
-            #     self.max_len = max(self.max_len, len(sent))
-            #     if len(sent) >= 10:
-            #         self.data.append(tokenizer.encode(sent , return_tensors='pt')[0])
+            
+            elif 'n_hangi' == path:
+                print('start load n_hangi dataset')
+                with open('/root/jchlwogur/kogpt/dataset/n_hangsi.txt','r',encoding='utf-8') as f:
+                    contents = f.read()
+                topic = None
+                topic_flag = False
+                cnt = 0
+                prev_line = ''
+                cnt_1 = 0
+                for line in tqdm(contents.split('\n')):
+                    line = line.strip()
+                    if 'topic' in line:
+                        topic = line.split(':')[-1].strip()
+                        cnt = 0
+                        prev_line = ''
+                        continue
+                    elif 'body' in line:
+                        continue
+                    if cnt == len(topic):
+                        prev_line = ''
+                        cnt = 0
+                    if cnt > 0:
+                        line = line[:self._max_len]
+                        self.max_len = max(self.max_len, len(line))
+                        if len(line) >= 10:
+                            self.data.append(tokenizer.encode(line , return_tensors='pt')[0])
+                    prev_line += (line + ' ')
+                    prev_line = prev_line[:self._max_len]
+                    self.max_len = max(self.max_len, len(prev_line))
+                    if len(prev_line) >= 10:
+                        self.data.append(tokenizer.encode(prev_line , return_tensors='pt')[0])
+                    cnt += 1
+                    # print(prev_line)
 
 
     def _padding(self):
-        for i, seq in enumerate(tqdm(self.data)):
-            self.data[i] = F.pad(self.data[i], pad=(0, self.max_len - len(seq)), value = 3)
+        for i in tqdm(range(len(self.data))):
+            self.data[i] = torch.cat((self.data[i], torch.tensor([tokenizer.eos_token_id])))
+            self.data[i] = F.pad(self.data[i], pad=(0, self.max_len - len(self.data[i])), value = tokenizer.pad_token_id)
 
 
 class CustomDataset1(Dataset):
@@ -241,6 +218,14 @@ if __name__=="__main__":
 
     print(dataset[20])
     print(dataset[20].shape)
+    print(dataset[-3])
+    print(tokenizer.decode(dataset[-3]))
+    print(dataset[-3].shape)
+    
+    print(dataset[-2])
+    print(tokenizer.decode(dataset[-2]))
+    print(dataset[-2].shape)
+    
     print(dataset[-1])
     print(tokenizer.decode(dataset[-1]))
     print(dataset[-1].shape)
